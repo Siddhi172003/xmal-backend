@@ -13,12 +13,15 @@ def home():
 @app.route("/scan", methods=["POST"])
 def scan_apk():
     data = request.get_json()
+
     if not data or "features" not in data:
-        return jsonify({"error": "Missing 'features' in JSON"}), 400
+        return jsonify({"error": "Missing features"}), 400
 
     features = np.array(data["features"]).reshape(1, -1)
-    result, score = predict_apk(features)
-    return jsonify({"result": result, "score": float(score)})
+
+    result = predict_apk(features)
+
+    return jsonify(result)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
