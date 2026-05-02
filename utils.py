@@ -1,32 +1,42 @@
 import joblib
 import numpy as np
+import shap
 
 rf_model = joblib.load("rf_model.pkl")
 svm_model = joblib.load("svm_model.pkl")
+feature_names = joblib.load("feature_names.pkl")
 
+explainer = shap.TreeExplainer(rf_model)
 
 def predict_apk(features):
 
-    # Random Forest probability
     rf_score = rf_model.predict_proba(features)[0][1]
+    svm_score = svm_model.predict_proba(features)[0][1]
 
-    # SVM raw prediction
-    svm_raw = svm_model.decision_function(features)[0]
+    final_score = (rf_score + svm_score) / 2
 
-    # Convert SVM score to probability
-    svm_score = 1 / (1 + np.exp(-svm_raw))
+    result = "Malicious" if final_score > 0.5 else "Safe"
 
-    # Final cloud score
-    cloud_score = (rf_score + svm_score) / 2
+    # SHAP explanation
+    shap_values = explainer.shap_values(features)
 
-    if cloud_score > 0.5:
-        result = "Malicious"
-    else:
-        result = "Safe"
+    feature_importance = []
 
-    return {
-        "result": result,
-        "rf_score": float(rf_score),
-        "svm_score": float(svm_score),
-        "cloud_score": float(cloud_score)
-    }
+    for i in range(len(features[0])):
+        if features[0][i] == 1:
+            impact = abs(shap_values[1][0][i])
+
+            feature_importance.append(
+                (feature_names[i], impact)
+            )
+
+    feature_importance.sort(
+        key=lambda x: x[1],
+        reverse=True
+    )
+
+    top_features = [
+        f[0] for f in feature_importance[:5]
+    ]
+
+    return result, final_score, rf_score, svm_score, top_features

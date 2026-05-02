@@ -19,6 +19,22 @@ X_train, X_test, y_train, y_test = train_test_split(
     random_state=42
 )
 
+import pandas as pd
+
+# Load original dataset for feature names
+dataset = pd.read_csv("Drebin.csv")
+
+dataset = dataset.replace("?", 0)
+dataset["class"] = dataset["class"].astype(str).str.strip()
+dataset["class"] = dataset["class"].map({"B":0, "S":1})
+dataset = dataset.dropna(subset=["class"])
+
+feature_names = dataset.drop("class", axis=1).columns.tolist()
+
+joblib.dump(feature_names, "feature_names.pkl")
+
+print("Feature names saved!")
+
 # ---------------- Random Forest ----------------
 rf_model = RandomForestClassifier(
     n_estimators=500,

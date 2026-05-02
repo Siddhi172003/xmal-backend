@@ -19,9 +19,15 @@ def scan_apk():
 
     features = np.array(data["features"]).reshape(1, -1)
 
-    result = predict_apk(features)
+    result, final_score, rf_score, svm_score, explanation = predict_apk(features)
 
-    return jsonify(result)
+    return jsonify({
+        "result": result,
+        "score": float(final_score),
+        "rf_score": float(rf_score),
+        "svm_score": float(svm_score),
+        "explanation": explanation
+    })
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
