@@ -3,9 +3,8 @@ import joblib
 rf_model = joblib.load("rf_model.pkl")
 svm_model = joblib.load("svm_model.pkl")
 
-def predict_apk(features):
 
-    print("Prediction input shape:", features.shape)
+def predict_apk(features):
 
     rf_score = rf_model.predict_proba(features)[0][1]
     svm_score = svm_model.predict_proba(features)[0][1]
