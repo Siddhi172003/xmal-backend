@@ -19,14 +19,13 @@ def scan_apk():
 
     features = np.array(data["features"]).reshape(1, -1)
 
-    result, final_score, rf_score, svm_score, explanation = predict_apk(features)
+    result, final_score, rf_score, svm_score = predict_apk(features)
 
     return jsonify({
         "result": result,
         "score": float(final_score),
         "rf_score": float(rf_score),
-        "svm_score": float(svm_score),
-        "explanation": explanation
+        "svm_score": float(svm_score)
     })
 
 if __name__ == "__main__":
