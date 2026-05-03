@@ -1,32 +1,37 @@
 from flask import Flask, request, jsonify
 import numpy as np
-from utils import predict_apk  # Your trained DL + RF + SVM ensemble
+from utils import predict_apk
 
 app = Flask(__name__)
 
-# Optional homepage to check server in browser
-@app.route("/", methods=["GET"])
+@app.route("/")
 def home():
     return "Android Malware Scanner API is running!"
 
-# Scan endpoint (POST only)
 @app.route("/scan", methods=["POST"])
 def scan_apk():
-    data = request.get_json()
+    try:
+        data = request.get_json()
 
-    if not data or "features" not in data:
-        return jsonify({"error": "Missing features"}), 400
+        if not data or "features" not in data:
+            return jsonify({"error": "Missing features"}), 400
 
-    features = np.array(data["features"]).reshape(1, -1)
+        features = np.array(data["features"]).reshape(1, -1)
 
-    result, final_score, rf_score, svm_score = predict_apk(features)
+        print("Incoming feature shape:", features.shape)
+        print("Incoming features:", features)
 
-    return jsonify({
-        "result": result,
-        "score": float(final_score),
-        "rf_score": float(rf_score),
-        "svm_score": float(svm_score)
-    })
+        result, final_score, rf_score, svm_score = predict_apk(features)
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+        return jsonify({
+            "result": result,
+            "rf_score": float(rf_score),
+            "svm_score": float(svm_score),
+            "cloud_score": float(final_score)
+        })
+
+    except Exception as e:
+        print("SCAN ERROR:", str(e))
+        return jsonify({
+            "error": str(e)
+        }), 500
