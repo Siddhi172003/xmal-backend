@@ -2,6 +2,11 @@ import joblib
 import shap
 import numpy as np
 
+
+# ============================================================
+# LOAD MODELS
+# ============================================================
+
 rf_model = joblib.load("rf_model.pkl")
 svm_model = joblib.load("svm_model.pkl")
 
@@ -14,23 +19,40 @@ feature_names = joblib.load("feature_names.pkl")
 
 rf_explainer = shap.TreeExplainer(rf_model)
 
+
+# ============================================================
+# PREDICTION
+# ============================================================
+
 def predict_apk(features):
 
     rf_score = float(
         rf_model.predict_proba(features)[0][1]
     )
+
     svm_score = float(
         svm_model.predict_proba(features)[0][1]
     )
 
+    final_score = (
+        rf_score + svm_score
+    ) / 2
 
-    final_score = (rf_score + svm_score) / 2
+    result = (
+        "Malicious"
+        if final_score > 0.5
+        else "Safe"
+    )
 
-    result = "Malicious" if final_score > 0.5 else "Safe"
+    return (
+        result,
+        final_score,
+        rf_score,
+        svm_score
+    )
 
-    return result, final_score, rf_score, svm_score
 
-    # ============================================================
+# ============================================================
 # SHAP VALUE EXTRACTION
 # ============================================================
 
@@ -53,12 +75,12 @@ def get_shap_values(features):
 
 def get_malicious_shap_values(features):
 
-    shap_values = get_shap_values(features)
-
+    shap_values = get_shap_values(
+        features
+    )
 
     # --------------------------------------------------------
-    # SHAP has changed its return format between versions.
-    # Handle both old and new formats.
+    # SHAP supports different return formats
     # --------------------------------------------------------
 
     if isinstance(shap_values, list):
@@ -71,22 +93,22 @@ def get_malicious_shap_values(features):
 
     else:
 
-        values = np.asarray(shap_values)
-
+        values = np.asarray(
+            shap_values
+        )
 
         # Newer SHAP versions may return:
         #
         # (samples, features, classes)
-        #
-        # For example:
-        # (1, 215, 2)
 
         if values.ndim == 3:
 
             values = values[:, :, 1]
 
 
-    values = np.asarray(values)
+    values = np.asarray(
+        values
+    )
 
 
     # Ensure shape is:
@@ -95,7 +117,10 @@ def get_malicious_shap_values(features):
 
     if values.ndim == 1:
 
-        values = values.reshape(1, -1)
+        values = values.reshape(
+            1,
+            -1
+        )
 
 
     return values[0]
@@ -117,7 +142,7 @@ def get_top_shap_features(
 
 
     # --------------------------------------------------------
-    # Get absolute SHAP magnitude
+    # Rank features by importance
     # --------------------------------------------------------
 
     ranked_indices = np.argsort(
@@ -181,7 +206,153 @@ def get_top_shap_features(
 
 
 # ============================================================
-# CREATE HUMAN-READABLE SHAP EXPLANATION
+# CONVERT TECHNICAL FEATURE NAME
+# INTO USER-FRIENDLY TEXT
+# ============================================================
+
+def make_feature_friendly(feature):
+
+    feature = str(feature).strip()
+
+    feature_lower = feature.lower()
+
+
+    # --------------------------------------------------------
+    # Common Android permissions / features
+    # --------------------------------------------------------
+
+    friendly_names = {
+
+        "read_phone_state":
+            "access to phone information",
+
+        "android.permission.read_phone_state":
+            "access to phone information",
+
+        "access_coarse_location":
+            "approximate location access",
+
+        "android.permission.access_coarse_location":
+            "approximate location access",
+
+        "access_fine_location":
+            "precise location access",
+
+        "android.permission.access_fine_location":
+            "precise location access",
+
+        "send_sms":
+            "the ability to send SMS messages",
+
+        "android.permission.send_sms":
+            "the ability to send SMS messages",
+
+        "read_sms":
+            "the ability to read SMS messages",
+
+        "android.permission.read_sms":
+            "the ability to read SMS messages",
+
+        "receive_sms":
+            "the ability to receive SMS messages",
+
+        "android.permission.receive_sms":
+            "the ability to receive SMS messages",
+
+        "write_sms":
+            "the ability to modify SMS messages",
+
+        "android.permission.write_sms":
+            "the ability to modify SMS messages",
+
+        "read_contacts":
+            "access to contacts",
+
+        "android.permission.read_contacts":
+            "access to contacts",
+
+        "write_contacts":
+            "the ability to modify contacts",
+
+        "android.permission.write_contacts":
+            "the ability to modify contacts",
+
+        "internet":
+            "internet access",
+
+        "android.permission.internet":
+            "internet access",
+
+        "getdeviceid":
+            "device identification information",
+
+        "dexclassloader":
+            "dynamic code loading",
+
+        "runtime.exec":
+            "system command execution",
+
+        "loadlibrary":
+            "loading native code"
+
+    }
+
+
+    if feature_lower in friendly_names:
+
+        return friendly_names[
+            feature_lower
+        ]
+
+
+    # --------------------------------------------------------
+    # Generic Android permission conversion
+    # --------------------------------------------------------
+
+    if feature_lower.startswith(
+            "android.permission."
+    ):
+
+        clean_name = (
+            feature_lower
+            .replace(
+                "android.permission.",
+                ""
+            )
+            .replace(
+                "_",
+                " "
+            )
+        )
+
+        return (
+            clean_name
+            + " permission"
+        )
+
+
+    # --------------------------------------------------------
+    # Generic feature name conversion
+    # --------------------------------------------------------
+
+    clean_name = (
+        feature
+        .replace(
+            "_",
+            " "
+        )
+        .replace(
+            ".",
+            " "
+        )
+    )
+
+
+    return clean_name.lower()
+
+
+# ============================================================
+# CREATE USER-FRIENDLY SHAP EXPLANATION
 # ============================================================
 
 def create_shap_explanation(
@@ -201,78 +372,167 @@ def create_shap_explanation(
     lines = []
 
 
-    # --------------------------------------------------------
-    # Overall result
-    # --------------------------------------------------------
+    # ========================================================
+    # OVERALL RESULT
+    # ========================================================
 
     if result == "Malicious":
 
         lines.append(
-            "The Random Forest model "
-            "classified this application "
-            "as potentially malicious."
+            "Why this app was marked as potentially harmful:"
+        )
+
+        lines.append("")
+
+        lines.append(
+            "The scan detected some behaviors "
+            "that may be associated with malicious apps."
         )
 
     else:
 
         lines.append(
-            "The Random Forest model "
-            "classified this application "
-            "as likely safe."
+            "Why this app was marked as safe:"
+        )
+
+        lines.append("")
+
+        lines.append(
+            "The scan did not find strong signs "
+            "of malicious behavior."
         )
 
 
-    lines.append(
-        f"Random Forest malware probability: "
-        f"{rf_score * 100:.2f}%."
-    )
-
-
-    # --------------------------------------------------------
-    # SHAP feature explanation
-    # --------------------------------------------------------
+    # ========================================================
+    # FEATURE EXPLANATIONS
+    # ========================================================
 
     if top_features:
 
+        lines.append("")
+
         lines.append(
-            "The main factors influencing "
-            "the Random Forest prediction were:"
+            "Some of the important behaviors detected were:"
         )
+
+
+    displayed = 0
 
 
     for item in top_features:
 
         feature = item["feature"]
-        shap_value = item["shap_value"]
-        feature_value = item["feature_value"]
 
+        shap_value = item["shap_value"]
+
+
+        friendly_feature = (
+            make_feature_friendly(
+                feature
+            )
+        )
+
+
+        # ----------------------------------------------------
+        # Positive SHAP value
+        # ----------------------------------------------------
 
         if shap_value > 0:
 
-            direction = (
-                "increased the malware prediction"
-            )
+            if result == "Malicious":
+
+                explanation = (
+                    f"• The app shows "
+                    f"{friendly_feature}. "
+                    f"This behavior increased the "
+                    f"security risk detected by the scan."
+                )
+
+            else:
+
+                explanation = (
+                    f"• The app shows "
+                    f"{friendly_feature}. "
+                    f"This behavior received some "
+                    f"attention during the security scan."
+                )
+
+
+        # ----------------------------------------------------
+        # Negative SHAP value
+        # ----------------------------------------------------
 
         elif shap_value < 0:
 
-            direction = (
-                "decreased the malware prediction"
-            )
+            if result == "Malicious":
+
+                explanation = (
+                    f"• The app shows "
+                    f"{friendly_feature}, "
+                    f"but this behavior did not strongly "
+                    f"increase the detected risk."
+                )
+
+            else:
+
+                explanation = (
+                    f"• The app shows "
+                    f"{friendly_feature}. "
+                    f"This behavior did not strongly "
+                    f"suggest malicious activity."
+                )
+
+
+        # ----------------------------------------------------
+        # Near-zero SHAP value
+        # ----------------------------------------------------
 
         else:
 
-            direction = (
-                "had little influence on the prediction"
+            explanation = (
+                f"• The app shows "
+                f"{friendly_feature}, "
+                f"but this had little effect on the "
+                f"overall security assessment."
             )
 
 
         lines.append(
-
-            f"• {feature}: "
-            f"SHAP value {shap_value:.4f}; "
-            f"this feature {direction}."
-
+            explanation
         )
 
 
-    return "\n".join(lines)
+        displayed += 1
+
+
+        if displayed >= top_n:
+
+            break
+
+
+    # ========================================================
+    # FINAL USER-FRIENDLY MESSAGE
+    # ========================================================
+
+    lines.append("")
+
+
+    if result == "Malicious":
+
+        lines.append(
+            "Please review the app carefully before "
+            "using it, especially if it came from "
+            "an untrusted source."
+        )
+
+    else:
+
+        lines.append(
+            "Overall, the detected behaviors did not "
+            "strongly indicate that this app is malicious."
+        )
+
+
+    return "\n".join(
+        lines
+    )
