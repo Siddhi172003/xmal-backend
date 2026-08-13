@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 import numpy as np
+from translation_service import translate_text
 
 from utils import (
     predict_apk,
@@ -43,6 +44,15 @@ def scan_apk():
         )
 
         # ==================================================
+        # LANGUAGE
+        # ==================================================
+
+        target_language = data.get(
+            "target_language",
+            "en"
+        )
+
+        # ==================================================
         # PREDICTION
         # ==================================================
 
@@ -57,11 +67,20 @@ def scan_apk():
         # REAL SHAP EXPLANATION
         # ==================================================
 
-        shap_explanation = create_shap_explanation(
+        english_explanation = create_shap_explanation(
             features,
             rf_score,
             result,
             top_n=5
+        )
+
+        # ==================================================
+        # TRANSLATION
+        # ==================================================
+
+        translated_explanation = translate_text(
+            english_explanation,
+            target_language
         )
 
         # ==================================================
@@ -73,7 +92,8 @@ def scan_apk():
             "rf_score": float(rf_score),
             "svm_score": float(svm_score),
             "cloud_score": float(final_score),
-            "explanation": shap_explanation
+            "language": target_language,
+            "explanation": translated_explanation
         })
 
     except Exception as e:
