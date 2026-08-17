@@ -1,91 +1,52 @@
-import os
-
-from google.cloud import translate_v3
+import requests
 
 
-def translate_text(
-        text,
-        target_language):
+MYMEMORY_URL = "https://api.mymemory.translated.net/get"
 
-    # English doesn't need translation
 
-    if not target_language or \
-            target_language == "en":
+def translate_text(text, target_language, source_language="en"):
 
+    if not text:
         return text
 
-
-    project_id = os.environ.get(
-        "GOOGLE_CLOUD_PROJECT"
-    )
-
-
-    if not project_id:
-
-        print(
-            "GOOGLE_CLOUD_PROJECT is missing"
-        )
-
+    # No translation needed for English
+    if not target_language or target_language == "en":
         return text
-
-
-    client = (
-        translate_v3
-        .TranslationServiceClient()
-    )
-
-
-    parent = (
-        f"projects/{project_id}"
-        f"/locations/global"
-    )
-
 
     try:
 
-        response = client.translate_text(
-
-            request={
-
-                "parent":
-                    parent,
-
-                "contents":
-                    [text],
-
-                "mime_type":
-                    "text/plain",
-
-                "source_language_code":
-                    "en",
-
-                "target_language_code":
-                    target_language
-
-            }
+        response = requests.get(
+            MYMEMORY_URL,
+            params={
+                "q": text,
+                "langpair": f"{source_language}|{target_language}"
+            },
+            timeout=15
         )
 
+        response.raise_for_status()
 
-        if not response.translations:
+        data = response.json()
 
-            return text
-
-
-        return (
-            response
-            .translations[0]
-            .translated_text
+        translated_text = (
+            data
+            .get("responseData", {})
+            .get("translatedText")
         )
 
+        if translated_text:
+            return translated_text
+
+        print("MyMemory did not return a translation.")
+        return text
 
     except Exception as e:
 
         print(
-            "Translation error:",
+            "MyMemory translation error:",
             str(e)
         )
 
-        # Don't break malware scanning
+        # Keep original SHAP explanation
         # if translation fails.
-
         return text
