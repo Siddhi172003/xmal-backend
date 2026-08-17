@@ -1,13 +1,50 @@
 from flask import Flask, request, jsonify
 import numpy as np
-from translation_service import translate_text
+import requests
 
-from utils import (
-    predict_apk,
-    create_shap_explanation
-)
+from utils import predict_apk
 
 app = Flask(__name__)
+
+MYMEMORY_URL = "https://api.mymemory.translated.net/get"
+
+
+def translate_text(text, target_language):
+
+    if not text:
+        return text
+
+    if not target_language or target_language == "en":
+        return text
+
+    try:
+        response = requests.get(
+            MYMEMORY_URL,
+            params={
+                "q": text,
+                "langpair": f"en|{target_language}"
+            },
+            timeout=15
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        translated_text = (
+            data
+            .get("responseData", {})
+            .get("translatedText")
+        )
+
+        if translated_text:
+            return translated_text
+
+        return text
+
+    except Exception as e:
+        print("Translation error:", str(e))
+        return text
 
 
 @app.route("/")
@@ -17,10 +54,8 @@ def home():
 
 @app.route("/scan", methods=["POST"])
 def scan_apk():
+
     try:
-        # ==================================================
-        # READ JSON
-        # ==================================================
 
         data = request.get_json()
 
@@ -29,84 +64,59 @@ def scan_apk():
                 "error": "Missing features"
             }), 400
 
-        # ==================================================
-        # FEATURES
-        # ==================================================
-
         features = np.array(
-            data["features"],
-            dtype=np.float32
+            data["features"]
         ).reshape(1, -1)
-
-        print(
-            "Incoming feature shape:",
-            features.shape
-        )
-
-        # ==================================================
-        # LANGUAGE
-        # ==================================================
 
         target_language = data.get(
             "target_language",
             "en"
         )
 
-        # ==================================================
-        # PREDICTION
-        # ==================================================
-
-        (
-            result,
-            final_score,
-            rf_score,
-            svm_score
-        ) = predict_apk(features)
-
-        # ==================================================
-        # REAL SHAP EXPLANATION
-        # ==================================================
-
-        english_explanation = create_shap_explanation(
-            features,
-            rf_score,
-            result,
-            top_n=5
+        result, final_score, rf_score, svm_score = predict_apk(
+            features
         )
 
-        # ==================================================
-        # TRANSLATION
-        # ==================================================
+        # Explanation text
+        if result == "Malicious":
+            explanation = (
+                "This application is classified as malicious. "
+                "The machine learning models detected suspicious "
+                "features that may indicate malware."
+            )
+        else:
+            explanation = (
+                "This application is classified as safe. "
+                "The machine learning models did not detect "
+                "significant malicious behavior."
+            )
 
+        # Translate explanation
         translated_explanation = translate_text(
-            english_explanation,
+            explanation,
             target_language
         )
 
-        # ==================================================
-        # RESPONSE
-        # ==================================================
-
         return jsonify({
+
             "result": result,
+
             "rf_score": float(rf_score),
+
             "svm_score": float(svm_score),
+
             "cloud_score": float(final_score),
-            "language": target_language,
-            "explanation": translated_explanation
+
+            "explanation": translated_explanation,
+
+            "target_language": target_language
+
         })
 
     except Exception as e:
+
         print("SCAN ERROR:", str(e))
 
         return jsonify({
             "error": str(e)
         }), 500
-
-
-if __name__ == "__main__":
-    app.run(
-        host="0.0.0.0",
-        port=5000,
-        debug=False
-    )
