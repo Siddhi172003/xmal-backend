@@ -1,6 +1,5 @@
 import requests
 
-
 MYMEMORY_URL = "https://api.mymemory.translated.net/get"
 
 
@@ -9,8 +8,7 @@ def translate_text(text, target_language, source_language="en"):
     if not text:
         return text
 
-    # No translation needed for English
-    if not target_language or target_language == "en":
+    if target_language == "en":
         return text
 
     try:
@@ -21,32 +19,26 @@ def translate_text(text, target_language, source_language="en"):
                 "q": text,
                 "langpair": f"{source_language}|{target_language}"
             },
-            timeout=15
+            timeout=30
         )
 
         response.raise_for_status()
 
         data = response.json()
 
-        translated_text = (
+        translated = (
             data
             .get("responseData", {})
             .get("translatedText")
         )
 
-        if translated_text:
-            return translated_text
+        if translated:
+            return translated
 
-        print("MyMemory did not return a translation.")
         return text
 
     except Exception as e:
 
-        print(
-            "MyMemory translation error:",
-            str(e)
-        )
+        print("Translation error:", e)
 
-        # Keep original SHAP explanation
-        # if translation fails.
         return text
