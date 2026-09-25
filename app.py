@@ -190,435 +190,287 @@ VIRUSTOTAL_UPLOAD_URL = (
 
 
 @app.route("/scan-file", methods=["POST"])
+VIRUSTOTAL_API_KEY = os.environ.get("VIRUSTOTAL_API_KEY")
+VIRUSTOTAL_UPLOAD_URL = "https://www.virustotal.com/api/v3/files"
+
+
+@app.route("/scan-file", methods=["POST"])
 def scan_file():
-
     try:
-
-        # ----------------------------------------------------
-        # 1. Check API key
-        # ----------------------------------------------------
-
         if not VIRUSTOTAL_API_KEY:
-
             return jsonify({
-
                 "malicious": False,
-
-                "message":
-                    "VirusTotal API key is not configured",
-
-                "details":
-                    "Configure VIRUSTOTAL_API_KEY on Render."
-
+                "message": "VirusTotal API key is not configured",
+                "details": "Configure VIRUSTOTAL_API_KEY on Render."
             }), 500
 
-
-        # ----------------------------------------------------
-        # 2. Check file exists
-        # ----------------------------------------------------
-
+        # Check whether a file was uploaded
         if "file" not in request.files:
-
             return jsonify({
-
                 "malicious": False,
-
-                "message":
-                    "No file received",
-
-                "details":
-                    "Please upload a PDF file."
-
+                "message": "No file received",
+                "details": "Please upload a PDF file."
             }), 400
-
 
         uploaded_file = request.files["file"]
 
-
-        # ----------------------------------------------------
-        # 3. Check filename
-        # ----------------------------------------------------
-
+        # Check filename
         if not uploaded_file.filename:
-
             return jsonify({
-
                 "malicious": False,
-
-                "message":
-                    "Invalid filename",
-
-                "details":
-                    "The uploaded file has no filename."
-
+                "message": "No filename provided",
+                "details": "Please select a PDF file."
             }), 400
-
 
         filename = uploaded_file.filename
 
-
-        # ----------------------------------------------------
-        # 4. Allow only PDF
-        # ----------------------------------------------------
-
+        # Only allow PDF files
         if not filename.lower().endswith(".pdf"):
-
             return jsonify({
-
                 "malicious": False,
-
-                "message":
-                    "Unsupported file type",
-
-                "details":
-                    "Only PDF files are currently supported."
-
+                "message": "Invalid file type",
+                "details": "Only PDF files are supported."
             }), 400
 
-
-        # ----------------------------------------------------
-        # 5. Read file
-        # ----------------------------------------------------
-
+        # Read file
         file_bytes = uploaded_file.read()
 
-
-        # ----------------------------------------------------
-        # 6. Check file size
-        # ----------------------------------------------------
-
+        # Maximum file size = 32 MB
         max_size = 32 * 1024 * 1024
 
         if len(file_bytes) > max_size:
-
             return jsonify({
-
                 "malicious": False,
-
-                "message":
-                    "File too large",
-
-                "details":
-                    "Maximum supported PDF size is 32 MB."
-
+                "message": "File too large",
+                "details": "Maximum PDF size is 32 MB."
             }), 413
 
-
+        # Empty file check
         if len(file_bytes) == 0:
-
             return jsonify({
-
                 "malicious": False,
-
-                "message":
-                    "Empty file",
-
-                "details":
-                    "The uploaded PDF is empty."
-
+                "message": "Empty file",
+                "details": "The uploaded PDF is empty."
             }), 400
 
-
-        # ----------------------------------------------------
-        # 7. Upload to VirusTotal
-        # ----------------------------------------------------
-
+        # VirusTotal headers
         headers = {
-
-            "x-apikey":
-                VIRUSTOTAL_API_KEY
-
+            "x-apikey": VIRUSTOTAL_API_KEY
         }
 
-
+        # Prepare PDF for VirusTotal
         files = {
-
             "file": (
-
                 filename,
-
                 file_bytes,
-
                 "application/pdf"
-
             )
-
         }
 
+        print("Uploading PDF to VirusTotal:", filename)
+
+        # Upload only — DO NOT wait for analysis here
+        upload_response = requests.post(
+            VIRUSTOTAL_UPLOAD_URL,
+            headers=headers,
+            files=files,
+            timeout=60
+        )
 
         print(
-            "Uploading PDF to VirusTotal:",
-            filename
+            "VirusTotal upload response:",
+            upload_response.status_code
         )
 
-
-        upload_response = requests.post(
-
-            VIRUSTOTAL_UPLOAD_URL,
-
-            headers=headers,
-
-            files=files,
-
-            timeout=120
-
-        )
-
-
-        # ----------------------------------------------------
-        # 8. Check upload response
-        # ----------------------------------------------------
-
-        if upload_response.status_code != 200:
-
+        if upload_response.status_code not in [200, 201]:
             print(
                 "VirusTotal upload error:",
                 upload_response.text
             )
 
             return jsonify({
-
                 "malicious": False,
-
-                "message":
-                    "Virus scanning service error",
-
-                "details":
-                    "Unable to submit the PDF for scanning."
-
+                "message": "VirusTotal upload failed",
+                "details": upload_response.text
             }), 502
 
+        upload_data = upload_response.json()
 
-        upload_data = (
-            upload_response.json()
-        )
-
-
-        # ----------------------------------------------------
-        # 9. Get analysis ID
-        # ----------------------------------------------------
-
-        analysis_id = (
-            upload_data["data"]["id"]
-        )
-
+        # Get VirusTotal analysis ID
+        analysis_id = upload_data["data"]["id"]
 
         print(
             "VirusTotal analysis ID:",
             analysis_id
         )
 
+        # Return immediately.
+        # We DO NOT wait for VirusTotal here.
+        return jsonify({
+            "malicious": False,
+            "message": "PDF uploaded successfully",
+            "status": "processing",
+            "analysis_id": analysis_id,
+            "filename": filename,
+            "details": "VirusTotal is analyzing the PDF. Use the analysis_id with /scan-file-status/ to check the result."
+        }), 202
 
-        # ----------------------------------------------------
-        # 10. Analysis URL
-        # ----------------------------------------------------
+    except Exception as e:
+
+        print(
+            "FILE UPLOAD ERROR:",
+            str(e)
+        )
+
+        return jsonify({
+            "malicious": False,
+            "message": "File upload failed",
+            "details": str(e)
+        }), 500
+
+
+# ---------------------------------------------------------
+# CHECK VIRUSTOTAL ANALYSIS STATUS
+# ---------------------------------------------------------
+
+@app.route("/scan-file-status/<analysis_id>", methods=["GET"])
+def scan_file_status(analysis_id):
+
+    try:
+
+        if not VIRUSTOTAL_API_KEY:
+            return jsonify({
+                "malicious": False,
+                "message": "VirusTotal API key is not configured",
+                "details": "Configure VIRUSTOTAL_API_KEY on Render."
+            }), 500
+
+        headers = {
+            "x-apikey": VIRUSTOTAL_API_KEY
+        }
 
         analysis_url = (
-
             "https://www.virustotal.com/api/v3/analyses/"
             + analysis_id
-
         )
 
+        print(
+            "Checking VirusTotal analysis:",
+            analysis_id
+        )
 
-        # ----------------------------------------------------
-        # 11. Wait for analysis
-        # ----------------------------------------------------
+        # Check ONCE only
+        analysis_response = requests.get(
+            analysis_url,
+            headers=headers,
+            timeout=30
+        )
 
-        malicious_count = 0
-
-        suspicious_count = 0
-
-        total_count = 0
-
-        completed = False
-
-
-        for attempt in range(20):
+        if analysis_response.status_code != 200:
 
             print(
-                "Checking analysis:",
-                attempt + 1
+                "VirusTotal status error:",
+                analysis_response.text
             )
-
-
-            analysis_response = requests.get(
-
-                analysis_url,
-
-                headers=headers,
-
-                timeout=60
-
-            )
-
-
-            if analysis_response.status_code != 200:
-
-                time.sleep(3)
-
-                continue
-
-
-            analysis_data = (
-                analysis_response.json()
-            )
-
-
-            attributes = (
-                analysis_data["data"]["attributes"]
-            )
-
-
-            status = attributes.get(
-                "status"
-            )
-
-
-            print(
-                "Analysis status:",
-                status
-            )
-
-
-            if status == "completed":
-
-                stats = attributes.get(
-                    "stats",
-                    {}
-                )
-
-
-                malicious_count = stats.get(
-                    "malicious",
-                    0
-                )
-
-
-                suspicious_count = stats.get(
-                    "suspicious",
-                    0
-                )
-
-
-                total_count = sum(
-                    stats.values()
-                )
-
-
-                completed = True
-
-                break
-
-
-            time.sleep(3)
-
-
-        # ----------------------------------------------------
-        # 12. Analysis timeout
-        # ----------------------------------------------------
-
-        if not completed:
 
             return jsonify({
-
                 "malicious": False,
+                "message": "Unable to check VirusTotal analysis",
+                "details": analysis_response.text,
+                "analysis_id": analysis_id
+            }), 502
 
-                "message":
-                    "Scan still processing",
+        analysis_data = analysis_response.json()
 
-                "details":
-                    "The PDF analysis did not finish within the allowed time."
+        attributes = analysis_data["data"]["attributes"]
 
-            }), 202
+        status = attributes.get("status")
 
-
-        # ----------------------------------------------------
-        # 13. Determine result
-        # ----------------------------------------------------
-
-        is_malicious = (
-
-            malicious_count > 0
-
-            or
-
-            suspicious_count > 0
-
+        print(
+            "VirusTotal analysis status:",
+            status
         )
 
+        # Still processing
+        if status != "completed":
 
-        # ----------------------------------------------------
-        # 14. Return result
-        # ----------------------------------------------------
+            return jsonify({
+                "malicious": False,
+                "message": "Scan still processing",
+                "status": status,
+                "analysis_id": analysis_id,
+                "details": "VirusTotal has not completed the analysis yet."
+            }), 202
+
+        # Analysis completed
+        stats = attributes.get("stats", {})
+
+        malicious_count = stats.get(
+            "malicious",
+            0
+        )
+
+        suspicious_count = stats.get(
+            "suspicious",
+            0
+        )
+
+        total_count = sum(
+            stats.values()
+        )
+
+        is_malicious = (
+            malicious_count > 0
+            or suspicious_count > 0
+        )
 
         if is_malicious:
 
             return jsonify({
-
                 "malicious": True,
-
-                "message":
-                    "Malware detected in PDF",
-
-                "details":
-                    (
-                        f"Malicious detections: "
-                        f"{malicious_count}\n"
-                        f"Suspicious detections: "
-                        f"{suspicious_count}\n"
-                        f"Total engines: "
-                        f"{total_count}"
-                    ),
-
-                "filename":
-                    filename
-
-            })
-
-
-        return jsonify({
-
-            "malicious": False,
-
-            "message":
-                "No malware detected",
-
-            "details":
-                (
+                "message": "Malware detected in PDF",
+                "status": "completed",
+                "analysis_id": analysis_id,
+                "details": (
                     f"Malicious detections: "
                     f"{malicious_count}\n"
                     f"Suspicious detections: "
                     f"{suspicious_count}\n"
                     f"Total engines: "
                     f"{total_count}"
-                ),
+                )
+            })
 
-            "filename":
-                filename
+        else:
 
-        })
-
+            return jsonify({
+                "malicious": False,
+                "message": "No malware detected",
+                "status": "completed",
+                "analysis_id": analysis_id,
+                "details": (
+                    f"Malicious detections: "
+                    f"{malicious_count}\n"
+                    f"Suspicious detections: "
+                    f"{suspicious_count}\n"
+                    f"Total engines: "
+                    f"{total_count}"
+                )
+            })
 
     except Exception as e:
 
         print(
-            "FILE SCAN ERROR:",
+            "FILE STATUS ERROR:",
             str(e)
         )
 
         return jsonify({
-
             "malicious": False,
-
-            "message":
-                "File scanning failed",
-
-            "details":
-                str(e)
-
+            "message": "Unable to check scan status",
+            "details": str(e),
+            "analysis_id": analysis_id
         }), 500
-
 
 # ============================================================
 # FIREBASE NOTIFICATION
