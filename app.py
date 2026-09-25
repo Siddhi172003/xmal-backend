@@ -190,11 +190,6 @@ VIRUSTOTAL_UPLOAD_URL = (
 
 
 @app.route("/scan-file", methods=["POST"])
-VIRUSTOTAL_API_KEY = os.environ.get("VIRUSTOTAL_API_KEY")
-VIRUSTOTAL_UPLOAD_URL = "https://www.virustotal.com/api/v3/files"
-
-
-@app.route("/scan-file", methods=["POST"])
 def scan_file():
     try:
         if not VIRUSTOTAL_API_KEY:
